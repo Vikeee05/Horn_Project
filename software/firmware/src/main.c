@@ -34,5 +34,13 @@ int main(void)
     printf("Remaining credits: %" PRIu32 "\n", horn_state.local_credits);
     printf("Battery charging state: %s\n", battery_state.ignition_on ? "Charging" : "Battery powered");
 
+    for (;;) {
+        board_led_on();
+        board_delay_ms(500U);
+        board_led_off();
+        board_delay_ms(500U);
+        printf("LED blink heartbeat\n");
+    }
+
     return 0;
 }
