@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Horn Billing Device - Hardware Selection</title>
+<style>
+@page { size: A4; margin: 14mm; }
+* { box-sizing: border-box; }
+body { font-family: "Segoe UI", Arial, sans-serif; color: #17212b; line-height: 1.35; font-size: 10pt; }
+h1 { color: #0d4661; font-size: 25pt; margin: 0 0 4pt; }
+h2 { color: #0d4661; border-bottom: 2px solid #56a3b7; padding-bottom: 3pt; margin-top: 18pt; }
+h3 { color: #26596a; margin-bottom: 4pt; }
+p { margin: 5pt 0; }
+.small { font-size: 8.5pt; color: #44515a; }
+.callout { background: #eaf5f5; border-left: 5px solid #17828b; padding: 9pt 11pt; margin: 9pt 0; }
+.warning { background: #fff4dc; border-left: 5px solid #d18a16; padding: 8pt 10pt; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; }
+th { background: #0d4661; color: white; text-align: left; }
+th, td { border: 1px solid #b8c8ce; padding: 5pt 6pt; vertical-align: top; }
+tr:nth-child(even) td { background: #f3f7f8; }
+ul { margin-top: 3pt; padding-left: 18pt; }
+li { margin: 2pt 0; }
+svg { width: 100%; height: auto; border: 1px solid #b8c8ce; background: #fbfdfd; }
+.page-break { page-break-before: always; }
+.code { font-family: Consolas, monospace; font-size: 8.5pt; background: #eef2f3; padding: 1pt 3pt; }
+</style>
+</head>
+<body>
+<h1>Horn Billing Device</h1>
+<p><strong>Hardware selection and conceptual schematic</strong></p>
+<p class="small">Revision 1.0 | 15 September 2026 | Target form factor: approximately 42 mm watch-dial PCB</p>
+
+<div class="callout"><strong>Recommended baseline:</strong> STM32U575CGU6 + SIMCom A7672G cellular modem + 1-cell Li-ion battery + protected isolated horn-input detector. Use FreeRTOS on the STM32. The cellular modem is independently power-switched because its transmit burst current is much larger than the MCU current.</div>
+
+<h2>1. Design decisions</h2>
+<ul>
+<li><strong>Controller:</strong> STM32U575CGU6, Cortex-M33, ultra-low-power STM32U5, UFQFPN-48, 3.3 V operation, ample Flash/RAM for FreeRTOS, TLS orchestration and persistent credit logic.</li>
+<li><strong>Cellular:</strong> SIMCom A7672G, LTE Cat 1 bis, UART AT-command interface, TCP/IP and TLS support. This is the preferred modern cellular choice for cloud communication. It is not a 2G-only GSM modem.</li>
+<li><strong>Horn detection:</strong> a dedicated protected digital input from the vehicle horn relay/BCM output, with an optocoupler and timer capture. Measure the active interval in hardware; do not poll the signal in a task.</li>
+<li><strong>Power:</strong> the vehicle input charges a 1-cell Li-ion battery. The battery directly supplies the modem rail through a load switch; an LDO supplies the STM32 and sensors at 3.3 V.</li>
+<li><strong>Software protocol:</strong> horn events are timestamped locally, converted to credits in 250 ms units, queued in nonvolatile storage, and uploaded over MQTT over TLS or HTTPS using the modem AT stack.</li>
+</ul>
+
+<div class="warning"><strong>Important cellular decision:</strong> if the requirement literally means 2G GSM/GPRS, substitute SIM800C. That option is smaller and simpler but depends on legacy 2G networks that are being retired in many countries. Confirm operator coverage before freezing the PCB. A7672G is recommended for a new product where LTE Cat 1 bis is available.</div>
+
+<h2>2. Complete component selection</h2>
+<table>
+<tr><th>Ref.</th><th>Part / package</th><th>Purpose and design notes</th></tr>
+<tr><td>U1</td><td>STM32U575CGU6, UFQFPN-48</td><td>Low-power main MCU. Use LSE 32.768 kHz crystal for RTC, HSI/MSI for normal operation, independent watchdog, STOP modes, EXTI + timer input capture.</td></tr>
+<tr><td>U2</td><td>SIMCom A7672G, LGA module</td><td>LTE Cat 1 bis cellular modem. Connect UART with RTS/CTS, SIM interface, PWRKEY, RESET, STATUS and an external 4G antenna through a 50 ohm feed.</td></tr>
+<tr><td>U3</td><td>TPS62160, QFN</td><td>Automotive-input synchronous buck, 9-32 V input class, set to 5.0 V for the charger input. Select the exact automotive-rated variant and validate load-dump protection.</td></tr>
+<tr><td>U4</td><td>BQ24074, QFN</td><td>1-cell Li-ion charger and power-path controller. Set charge current conservatively, for example 300-500 mA for a 400-600 mAh cell.</td></tr>
+<tr><td>U5</td><td>TPS22919 or equivalent, load switch</td><td>Switches the modem supply under MCU control. Choose a part with adequate continuous and peak current; place bulk capacitance at U2.</td></tr>
+<tr><td>U6</td><td>TLV75533P, SOT-23-5 or WSON</td><td>Low-Iq 3.3 V LDO for U1, fuel gauge and logic. Use separate modem power routing and ground return.</td></tr>
+<tr><td>U7</td><td>MAX17048, tiny DFN</td><td>Fuel gauge over I2C. Add a 1 kohm series resistor only if needed for bus edge control; keep SDA/SCL short.</td></tr>
+<tr><td>U8</td><td>LTV-814S or automotive-qualified optocoupler</td><td>Isolates the vehicle horn input from the logic domain. Use a resistor/TVS front end and validate LED current over the actual vehicle voltage range.</td></tr>
+<tr><td>D1</td><td>SMBJ33A or qualified automotive TVS</td><td>Suppresses vehicle-input transients. The final clamp/load-dump network must be selected against the vehicle electrical classification.</td></tr>
+<tr><td>F1</td><td>Resettable fuse or 1 A fuse</td><td>Protects the vehicle power branch. Final rating depends on charger input current and harness protection.</td></tr>
+<tr><td>BT1</td><td>1S Li-ion/LiPo, 400-600 mAh, protected cell</td><td>Energy storage while ignition is off. Use a cell with a protection circuit and a safety-certified supplier. A flat pouch cell is easier than a coin cell because the modem has high burst current.</td></tr>
+<tr><td>J1</td><td>Micro-coax or FPC cellular antenna connector</td><td>Use an external adhesive FPC antenna placed outside the battery and keep the RF keepout clear.</td></tr>
+<tr><td>J2</td><td>4- or 5-pin SWD test pads</td><td>SWDIO, SWCLK, NRST, 3V3 and GND. Use pads rather than a large connector to preserve the dial footprint.</td></tr>
+<tr><td>Y1/Y2</td><td>32.768 kHz LSE crystal; optional modem reference per module</td><td>Place the LSE crystal close to the MCU and follow the STM32 load-capacitor layout guidance.</td></tr>
+<tr><td>Protection</td><td>ESD diodes, ferrite beads, LC filters, 0.1 uF and 4.7-22 uF MLCCs</td><td>Protect SIM, USB/debug, horn input and external connectors. Put modem bulk capacitance close to VBAT pins.</td></tr>
+</table>
+
+<h2>3. Interfaces and pin plan</h2>
+<table>
+<tr><th>Function</th><th>STM32U5 connection</th><th>Electrical / firmware behavior</th></tr>
+<tr><td>Cellular modem</td><td>USART1 TX/RX + RTS/CTS</td><td>3.3 V UART if supported by module interface; confirm A7672G voltage levels. AT commands, MQTT/HTTPS, TLS, network registration.</td></tr>
+<tr><td>Horn event</td><td>GPIO EXTI + TIM input capture</td><td>Optocoupler output goes active on horn signal. Capture rising/falling edges; debounce in hardware/software; reject pulses shorter than a configurable threshold.</td></tr>
+<tr><td>Fuel gauge</td><td>I2C1 SDA/SCL</td><td>Read state of charge and voltage. Wake the MCU for periodic measurement.</td></tr>
+<tr><td>Charger status</td><td>GPIO inputs from BQ24074</td><td>Use charge-done and power-good signals to control modem policy and report battery state.</td></tr>
+<tr><td>Ignition / vehicle power</td><td>ADC input through protected divider, optional</td><td>Distinguishes vehicle power present from battery-only operation. Never connect an automotive line directly to an MCU pin.</td></tr>
+<tr><td>Debug</td><td>SWD pads</td><td>Production test, bootloader recovery and FreeRTOS debugging.</td></tr>
+</table>
+
+<h2>4. Horn detection recommendation</h2>
+<p>Use a <strong>direct discrete horn-line input</strong> when the horn relay or BCM output is accessible. The detection path is: vehicle horn signal -> fuse/resistor network -> TVS/RC filter -> optocoupler LED -> optocoupler transistor -> STM32 EXTI/timer pin. This is a signal acquisition circuit, so there is no external communication protocol required.</p>
+<p>Configure the timer in input-capture mode. On the first valid rising edge, record a monotonic timestamp; on the falling edge, calculate the duration. Consume credits as <span class="code">floor(duration_ms / 250)</span> while carrying a remainder, or use a product decision to round up. Store the event before attempting cellular transmission.</p>
+<p>If the vehicle exposes no usable horn wire, use a qualified automotive CAN transceiver and decode the vehicle's body-control message only after obtaining the vehicle-specific CAN definition. Do not connect an unknown CAN bus directly to the MCU, and do not assume a universal horn CAN identifier.</p>
+
+<h2>5. Power and physical design</h2>
+<ul>
+<li>Use a 4-layer rigid PCB, approximately 42 mm round or 40 x 40 mm maximum, with RF and modem areas at the perimeter. A 24 mm modem plus antenna keepout, battery, charger and connectors make a true 35 mm watch dial very difficult.</li>
+<li>Use a rigid-flex tail for the FPC antenna and vehicle harness if the enclosure requires a circular dial. Do not place copper, battery foil or ground stitching under the antenna keepout specified by the antenna vendor.</li>
+<li>Route modem VBAT as a short, wide pair. Place at least 470 uF low-ESR bulk capacitance plus 10 uF and 100 nF ceramics close to the modem, subject to the A7672G hardware design guide.</li>
+<li>Separate the high-current modem return from the MCU/horn-input return until the power-entry star point. Add a modem enable state so the MCU can shut it down between queued sync windows.</li>
+<li>Use the vehicle supply only through fuse, reverse-polarity protection, TVS and the buck converter. Validate cold crank, load dump, ESD and conducted transients on the target vehicle.</li>
+</ul>
+
+<div class="page-break"></div>
+<h2>6. Conceptual schematic</h2>
+<p class="small">This is an engineering architecture schematic, not a production-ready PCB netlist. Exact pin numbers, resistor values, antenna matching, thermal design and transient ratings must be completed from the selected vendor hardware design guides and the target vehicle measurements.</p>
+<svg viewBox="0 0 1100 760" role="img" aria-label="Conceptual schematic for horn billing device">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#0d4661"/></marker></defs>
+<rect x="20" y="35" width="210" height="95" rx="6" fill="#fff4dc" stroke="#d18a16" stroke-width="2"/><text x="35" y="62" font-size="17" font-weight="bold">Vehicle 9-32 V</text><text x="35" y="85" font-size="13">F1 -> reverse protect</text><text x="35" y="105" font-size="13">D1 TVS -> input filter</text>
+<rect x="280" y="35" width="190" height="95" rx="6" fill="#eaf5f5" stroke="#17828b" stroke-width="2"/><text x="300" y="62" font-size="17" font-weight="bold">U3 Buck</text><text x="300" y="85" font-size="13">TPS62160</text><text x="300" y="105" font-size="13">5.0 V charger input</text>
+<rect x="520" y="35" width="210" height="95" rx="6" fill="#eaf5f5" stroke="#17828b" stroke-width="2"/><text x="540" y="62" font-size="17" font-weight="bold">U4 Charger</text><text x="540" y="85" font-size="13">BQ24074 power path</text><text x="540" y="105" font-size="13">Li-ion charge + status</text>
+<rect x="790" y="35" width="250" height="95" rx="6" fill="#fff4dc" stroke="#d18a16" stroke-width="2"/><text x="810" y="62" font-size="17" font-weight="bold">BT1 1S Li-ion</text><text x="810" y="85" font-size="13">400-600 mAh protected cell</text><text x="810" y="105" font-size="13">VBAT 3.0-4.2 V</text>
+<line x1="230" y1="82" x2="280" y2="82" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><line x1="470" y1="82" x2="520" y2="82" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><line x1="730" y1="82" x2="790" y2="82" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="70" y="210" width="260" height="120" rx="6" fill="#f3f7f8" stroke="#526d78" stroke-width="2"/><text x="90" y="238" font-size="17" font-weight="bold">Horn input</text><text x="90" y="262" font-size="13">Vehicle horn/BCM output</text><text x="90" y="283" font-size="13">Rin + TVS + RC filter</text><text x="90" y="304" font-size="13">U8 optocoupler</text>
+<rect x="420" y="210" width="270" height="120" rx="6" fill="#dff0f5" stroke="#0d4661" stroke-width="2"/><text x="440" y="238" font-size="17" font-weight="bold">U1 STM32U575</text><text x="440" y="262" font-size="13">EXTI + TIM capture</text><text x="440" y="283" font-size="13">FreeRTOS + credit manager</text><text x="440" y="304" font-size="13">STOP mode + watchdog</text>
+<line x1="330" y1="270" x2="420" y2="270" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><text x="340" y="255" font-size="12">HORN_ACTIVE</text>
+<rect x="780" y="210" width="260" height="120" rx="6" fill="#dff0f5" stroke="#0d4661" stroke-width="2"/><text x="800" y="238" font-size="17" font-weight="bold">U2 A7672G</text><text x="800" y="262" font-size="13">LTE Cat 1 bis</text><text x="800" y="283" font-size="13">UART + RTS/CTS + PWRKEY</text><text x="800" y="304" font-size="13">MQTT/TLS or HTTPS</text>
+<line x1="690" y1="270" x2="780" y2="270" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><text x="702" y="255" font-size="12">UART1</text>
+<rect x="780" y="390" width="260" height="95" rx="6" fill="#f3f7f8" stroke="#526d78" stroke-width="2"/><text x="800" y="418" font-size="17" font-weight="bold">Antenna</text><text x="800" y="442" font-size="13">50 ohm RF trace + FPC</text><text x="800" y="462" font-size="13">outside battery keepout</text><line x1="910" y1="330" x2="910" y2="390" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="70" y="390" width="260" height="95" rx="6" fill="#f3f7f8" stroke="#526d78" stroke-width="2"/><text x="90" y="418" font-size="17" font-weight="bold">U7 Fuel gauge</text><text x="90" y="442" font-size="13">MAX17048 over I2C</text><text x="90" y="462" font-size="13">VBAT, SOC, low battery</text><line x1="330" y1="435" x2="420" y2="300" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><text x="335" y="405" font-size="12">I2C1</text>
+<rect x="420" y="390" width="270" height="95" rx="6" fill="#f3f7f8" stroke="#526d78" stroke-width="2"/><text x="440" y="418" font-size="17" font-weight="bold">U6 3.3 V logic rail</text><text x="440" y="442" font-size="13">TLV75533 low-Iq LDO</text><text x="440" y="462" font-size="13">MCU + sensor + pullups</text><line x1="520" y1="130" x2="520" y2="390" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/><line x1="690" y1="435" x2="690" y2="330" stroke="#0d4661" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="70" y="550" width="970" height="110" rx="6" fill="#eef2f3" stroke="#526d78" stroke-width="2"/><text x="95" y="580" font-size="17" font-weight="bold">Required protection and test access</text><text x="95" y="605" font-size="13">SWD pads: SWDIO, SWCLK, NRST, 3V3, GND | ESD on external connectors | modem bulk capacitance near VBAT pins | test points for VIN, 5V, VBAT, 3V3, HORN_ACTIVE</text><text x="95" y="630" font-size="13">Keep modem RF and high-current returns away from the horn detector and MCU analog ground. Add a hardware modem power enable and reset recovery path.</text>
+</svg>
+
+<h2>7. Firmware and RTOS partition</h2>
+<table>
+<tr><th>FreeRTOS task</th><th>Responsibility</th></tr>
+<tr><td>HornCaptureTask</td><td>Consumes timer edge events, validates pulse duration and posts immutable horn events to a queue.</td></tr>
+<tr><td>CreditTask</td><td>Applies 250 ms accounting, maintains remainder, commits balance and event sequence to FRAM or internal flash.</td></tr>
+<tr><td>CellularTask</td><td>Owns the modem UART, registration state, backoff, TLS session and queued event upload.</td></tr>
+<tr><td>PowerTask</td><td>Reads charger/fuel-gauge state and controls modem enable, sleep policy and low-battery behavior.</td></tr>
+<tr><td>HealthTask</td><td>Watchdog feeding policy, brownout handling, fault counters and diagnostic records.</td></tr>
+</table>
+
+<h2>8. Items still required before PCB release</h2>
+<ul>
+<li>Measure the actual horn signal: voltage range, polarity, pulse behavior and whether the signal is a relay output, BCM output or switch-to-ground line.</li>
+<li>Confirm cellular band plan, SIM/eSIM choice, operator availability and antenna certification for the deployment country.</li>
+<li>Choose the exact battery cell and enclosure after modem RF keepout and peak-current testing. Include a certified battery protection and thermal plan.</li>
+<li>Complete automotive transient, ESD, EMC, vibration, temperature and ingress testing. A watch-sized board mounted in a vehicle still needs automotive-grade protection.</li>
+<li>Convert this conceptual drawing into a KiCad schematic with exact symbols, net classes, component ratings and vendor-recommended modem reference circuits.</li>
+</ul>
+<p class="small"><strong>Engineering status:</strong> suitable as a component-selection baseline and schematic architecture. Do not manufacture from this PDF without completing the vendor reference-design checks and vehicle measurements above.</p>
+</body>
+</html>
