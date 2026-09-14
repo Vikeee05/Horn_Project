@@ -1,10 +1,14 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include "horn_credit_manager.h"
 #include "cloud_sync.h"
 #include "battery_monitor.h"
+#include "board.h"
 
 int main(void)
 {
+    board_init();
+
     horn_credit_state_t horn_state;
     cloud_sync_state_t sync_state;
     battery_monitor_state_t battery_state;
@@ -18,7 +22,7 @@ int main(void)
     battery_state.battery_voltage_mv = 3700U;
 
     printf("Horn billing firmware started.\n");
-    printf("Initial local credits: %u\n", horn_state.local_credits);
+    printf("Initial local credits: %" PRIu32 "\n", horn_state.local_credits);
 
     /* Example: horn press for 1250 ms => 5 credits */
     if (horn_credit_manager_consume(&horn_state, 1250U)) {
@@ -27,7 +31,7 @@ int main(void)
         printf("Not enough credits available\n");
     }
 
-    printf("Remaining credits: %u\n", horn_state.local_credits);
+    printf("Remaining credits: %" PRIu32 "\n", horn_state.local_credits);
     printf("Battery charging state: %s\n", battery_state.ignition_on ? "Charging" : "Battery powered");
 
     return 0;
